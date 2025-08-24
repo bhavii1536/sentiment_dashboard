@@ -1,0 +1,10 @@
+streamlit
+nltk
+spacy
+tweepy
+googletrans==4.0.0-rc1
+plotly
+langdetect
+transformers
+torch
+regex

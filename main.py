@@ -1,9 +1,23 @@
 from preprocess import clean_text, detect_language
 from sentiment_model import analyze_sentiment
 import matplotlib.pyplot as plt
+import csv
+import os
 
-# Store history of results for visualization
+# Store history for visualization
 history = {"Positive": 0, "Negative": 0, "Neutral": 0}
+results = []  # to store all inputs & outputs
+
+# CSV file path
+CSV_FILE = "sentiment_results.csv"
+
+def save_to_csv(data):
+    file_exists = os.path.isfile(CSV_FILE)
+    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(["Input Text", "Cleaned Text", "Language", "Sentiment"])
+        writer.writerow(data)
 
 def run_analysis(text: str):
     # Step 1: Preprocess text
@@ -13,10 +27,14 @@ def run_analysis(text: str):
     # Step 2: Run sentiment model
     sentiment = analyze_sentiment(cleaned_text, lang)
 
-    # Step 3: Save result to history
+    # Step 3: Save result to history + list
     history[sentiment] += 1
+    results.append([text, cleaned_text, lang, sentiment])
 
-    # Step 4: Show result
+    # Step 4: Save into CSV
+    save_to_csv([text, cleaned_text, lang, sentiment])
+
+    # Step 5: Show result instantly
     print("\n🔎 Input Text:", text)
     print("🧹 Cleaned Text:", cleaned_text)
     print("🌍 Detected Language:", lang)
@@ -49,6 +67,7 @@ if __name__ == "__main__":
         if user_input.lower() == "exit":
             print("\n📊 Generating Visualizations...")
             show_visualizations()
+            print(f"✅ All results saved in {CSV_FILE}")
             print("👋 Exiting Sentiment Analyzer")
             break
         run_analysis(user_input)

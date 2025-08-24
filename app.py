@@ -1,109 +1,98 @@
 # app.py
 import json
 import streamlit as st
+from collections import Counter
 from preprocess import clean_text, detect_language
 from sentiment_model import analyze_sentiment
 from fetch_data import fetch_twitter_data, fetch_youtube_by_keyword, fetch_youtube_by_channel
-from visualize import plot_sentiment_pie
-import plotly.graph_objects as go
-from collections import Counter
+from visualize import plot_sentiment_pie, plot_platform_bar
 
-st.set_page_config(page_title="Sentiment Dashboard", layout="wide")
+st.set_page_config(page_title="Sentiment Analysis Dashboard", layout="wide")
 
-# ---- Load translations ----
+# ---- load translations ----
 with open("translations.json", "r", encoding="utf-8") as f:
     I18N = json.load(f)
 
 def t(lang, key, fallback=None):
     return I18N.get(lang, {}).get(key, fallback or key)
 
-# ---- Sidebar ----
-st.sidebar.title("📊 " + t("en", "app_title"))
-lang = st.sidebar.selectbox("🌐 Language", ["English", "Tamil", "Hindi"], index=0)
+# ---- sidebar controls ----
+st.sidebar.title("📊 Sentiment Dashboard")
+lang = st.sidebar.selectbox("🌐 Language", ["English", "Tamil", "Hindi"], index=1)
 menu = st.sidebar.radio(
     t(lang, "menu", "Menu"),
-    [t(lang, "product_analysis", "Product / Feedback Analysis"),
-     t(lang, "creator_insights", "Content Creator Insights")]
+    [t(lang,"product_analysis","Product / Feedback Analysis"),
+     t(lang,"creator_insights","Content Creator Insights")]
 )
 
 st.title(t(lang, "app_title", "Sentiment Analysis Dashboard"))
 st.caption(t(lang, "tagline", "Fast, multilingual (Tamil/English/Hindi), emoji-aware"))
 
-# ---- Helper functions ----
-def extract_feedback_comments(records, top_n=5, sentiment="Positive"):
-    """Extract top N meaningful comments by sentiment"""
-    filtered = [r["text"] for r in records if r["sent"]==sentiment and len(r["text"].strip())>5]
-    filtered = list(dict.fromkeys(filtered))  # remove duplicates
-    return filtered[:top_n]
-
-# ===== PRODUCT / FEEDBACK ANALYSIS =====
+# ====== PRODUCT / FEEDBACK ANALYSIS ======
 if menu == t(lang,"product_analysis","Product / Feedback Analysis"):
     st.subheader(t(lang, "select_product","Enter Product Name / Keyword"))
     col1, col2 = st.columns([2,1])
     with col1:
-        keyword = st.text_input(t(lang, "product_name","Product / Topic Name"), placeholder="e.g., iPhone 15")
+        keyword = st.text_input(t(lang, "product_name","Product / Topic Name"), placeholder="e.g., Foxtale")
     with col2:
         max_items = st.number_input(t(lang, "items_per_platform","Items per platform"), min_value=50, max_value=400, value=200, step=50)
 
-    if st.button(t(lang,"analyze_button","Analyze"), use_container_width=True) and keyword.strip():
-        with st.spinner(t(lang,"fetching_data","Fetching latest data…")):
+    if st.button(t(lang, "analyze_button","Analyze"), use_container_width=True) and keyword.strip():
+        with st.spinner(t(lang, "fetching_data","Fetching latest data…")):
+            # Fetch data
             tweets = fetch_twitter_data(keyword, limit=max_items)
             yt_comments = fetch_youtube_by_keyword(keyword, max_videos=5, max_comments_per_video=max_items//5)
 
-        # ---- unify and analyze
+        # ---- analyze sentiments ----
         records = []
+        twitter_views = len(tweets)
+        yt_views = sum([c.get("viewCount",0) for c in yt_comments]) if yt_comments else 0
+
         for txt in tweets:
             cleaned = clean_text(txt)
             lg = detect_language(cleaned)
             sent = analyze_sentiment(cleaned, lg)
-            records.append({"text": txt, "clean": cleaned, "lang": lg, "sent": sent, "src": "Twitter", "views": 1})
+            records.append({"text": txt, "clean": cleaned, "lang": lg, "sent": sent, "src": "Twitter"})
 
         for item in yt_comments:
             cleaned = clean_text(item["text"])
             lg = detect_language(cleaned)
             sent = analyze_sentiment(cleaned, lg)
-            records.append({"text": item["text"], "clean": cleaned, "lang": lg, "sent": sent,
-                            "src": "YouTube", "views": item.get("viewCount",0)})
+            records.append({"text": item["text"], "clean": cleaned, "lang": lg, "sent": sent, "src": "YouTube", "videoTitle": item.get("videoTitle","")})
 
-        # ---- Charts ----
-        col1, col2 = st.columns(2)
-        with col1:
+        # ---- charts ----
+        c1, c2 = st.columns(2)
+        with c1:
             st.plotly_chart(plot_sentiment_pie(records), use_container_width=True)
-
-        # Platform comparison by total views / mentions
-        platforms = ["Twitter","YouTube"]
-        values = [
-            sum(r.get("views",1) for r in records if r["src"]=="Twitter"),
-            sum(r.get("views",1) for r in records if r["src"]=="YouTube")
-        ]
-        fig = go.Figure([go.Bar(x=platforms, y=values, text=values, textposition="auto")])
-        fig.update_layout(title="Platform Comparison (Total Views / Mentions)", xaxis_title="Platform", yaxis_title="Count / Views")
-        with col2:
+        with c2:
+            # Platform comparison by views/comments
+            fig = plot_platform_bar(records, twitter_views, yt_views)
             st.plotly_chart(fig, use_container_width=True)
 
-        # ---- Pros / Cons comments
-        st.markdown("### Pros / Cons (User Opinions)")
-        pros = extract_feedback_comments(records, top_n=5, sentiment="Positive")
-        cons = extract_feedback_comments(records, top_n=5, sentiment="Negative")
-        st.markdown("**Pros:**")
-        for p in pros:
-            st.markdown(f"- {p}")
-        st.markdown("**Cons:**")
-        for c in cons:
-            st.markdown(f"- {c}")
+        # ---- pros & cons ----
+        pos_texts = [r["clean"] for r in records if r["sent"]=="Positive"]
+        neg_texts = [r["clean"] for r in records if r["sent"]=="Negative"]
 
-# ===== CONTENT CREATOR INSIGHTS =====
+        st.markdown("### Pros & Cons")
+        st.markdown("**Pros:**")
+        for txt in pos_texts[:5]:
+            st.markdown(f"- {txt}")
+        st.markdown("**Cons:**")
+        for txt in neg_texts[:5]:
+            st.markdown(f"- {txt}")
+
+# ====== CONTENT CREATOR INSIGHTS (YOUTUBE) ======
 if menu == t(lang,"creator_insights","Content Creator Insights"):
     st.subheader(t(lang, "select_channel","Enter YouTube Channel ID"))
     col1, col2 = st.columns([2,1])
     with col1:
-        channel_id = st.text_input(t(lang,"channel_id","Channel ID"), placeholder="e.g., UC_x5XG1OV2P6uZZ5FSM9Ttw")
+        channel_id = st.text_input(t(lang, "channel_id","Channel ID"), placeholder="e.g., UC_x5XG1OV2P6uZZ5FSM9Ttw")
     with col2:
-        max_videos = st.number_input(t(lang,"videos_to_analyze","Videos to analyze"), min_value=5, max_value=50, value=20, step=5)
-    max_comments = st.slider(t(lang,"comments_per_video","Comments per video"), 50, 300, 200, 50)
+        max_videos = st.number_input(t(lang, "videos_to_analyze","Videos to analyze"), min_value=5, max_value=50, value=20, step=5)
+    max_comments = st.slider(t(lang, "comments_per_video","Comments per video"), 50, 300, 200, 50)
 
-    if st.button(t(lang,"analyze_channel","Analyze Channel"), use_container_width=True) and channel_id.strip():
-        with st.spinner(t(lang,"fetching_channel","Fetching channel comments…")):
+    if st.button(t(lang, "analyze_channel","Analyze Channel"), use_container_width=True) and channel_id.strip():
+        with st.spinner(t(lang, "fetching_channel","Fetching channel comments…")):
             yt_comments = fetch_youtube_by_channel(channel_id, max_videos=max_videos, max_comments_per_video=max_comments)
 
         records = []
@@ -115,18 +104,11 @@ if menu == t(lang,"creator_insights","Content Creator Insights"):
                    "videoTitle": item.get("videoTitle",""), "views": item.get("viewCount",0)}
             records.append(rec)
 
-        # Charts
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(plot_sentiment_pie(records), use_container_width=True)
-        with col2:
-            platforms = ["YouTube"]
-            values = [sum(r.get("views",0) for r in records)]
-            fig = go.Figure([go.Bar(x=platforms, y=values, text=values, textposition="auto")])
-            fig.update_layout(title="Channel Views", xaxis_title="Platform", yaxis_title="Views")
-            st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(plot_sentiment_pie(records), use_container_width=True)
+        # Only YouTube, so platform bar optional
+        st.plotly_chart(plot_platform_bar(records, twitter_views=0, yt_views=sum([r["views"] for r in records])), use_container_width=True)
 
-        # KPIs
+        # Quick KPIs
         pos = sum(1 for r in records if r["sent"]=="Positive")
         neg = sum(1 for r in records if r["sent"]=="Negative")
         neu = sum(1 for r in records if r["sent"]=="Neutral")
@@ -138,4 +120,4 @@ if menu == t(lang,"creator_insights","Content Creator Insights"):
         colD.metric("Negative %", f"{(neg/total)*100:0.1f}%")
 
 st.write("")
-st.caption("Tip: Set your YT API key in Streamlit secrets as YOUTUBE_API_KEY. Twitter uses snscrape fallback if API keys are missing.")
+st.caption("Tip: Set your YT API key in Streamlit secrets. For Twitter, snscrape is used (no API key needed).")

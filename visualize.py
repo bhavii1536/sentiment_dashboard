@@ -16,37 +16,45 @@ def plot_sentiment_pie(records: List[Dict]):
     return fig
 
 def plot_platform_bar(records: List[Dict]):
-    # platform wise total + positive rate
+    # Compare total impact (views for YouTube, count for Twitter) per platform
     df = pd.DataFrame(records)
     if df.empty:
         return go.Figure()
-    by_src = df.groupby(["src","sent"]).size().unstack(fill_value=0)
-    by_src = by_src[["Positive","Neutral","Negative"]] if set(["Positive","Neutral","Negative"]).issubset(by_src.columns) else by_src
+    df["impact"] = df.apply(lambda x: x.get("viewCount", 1) if x["src"]=="YouTube" else 1, axis=1)
+    platform_impact = df.groupby("src")["impact"].sum()
     fig = go.Figure()
-    for col in by_src.columns:
-        fig.add_bar(name=col, x=by_src.index, y=by_src[col])
-    fig.update_layout(barmode="stack", title="Platform Comparison", xaxis_title="Platform", yaxis_title="Count")
+    fig.add_bar(x=platform_impact.index, y=platform_impact.values, marker_color=['blue','orange'])
+    fig.update_layout(title="Platform Comparison (Total Impact / Views)", xaxis_title="Platform", yaxis_title="Impact")
     return fig
 
 def plot_top_items(records: List[Dict], top_n: int = 5):
-    # pick top positive & negative examples (simple heuristic: length as proxy)
     df = pd.DataFrame(records)
     if df.empty:
         return go.Figure()
+    
+    # Calculate impact per record
+    df["impact"] = df.apply(lambda x: x.get("viewCount", 1) if x["src"]=="YouTube" else 1, axis=1)
+    
+    # Positive and negative separately
     pos = df[df["sent"]=="Positive"].copy()
     neg = df[df["sent"]=="Negative"].copy()
-    pos["score"] = pos["clean"].str.len()
-    neg["score"] = neg["clean"].str.len()
-    pos_top = pos.nlargest(top_n, "score")[["src","videoTitle","clean"]].fillna("")
-    neg_top = neg.nlargest(top_n, "score")[["src","videoTitle","clean"]].fillna("")
+    
+    # Sort by impact
+    pos_top = pos.nlargest(top_n, "impact")[["src","videoTitle","clean","impact"]].fillna("")
+    neg_top = neg.nlargest(top_n, "impact")[["src","videoTitle","clean","impact"]].fillna("")
 
-    # build tables as one figure with two bar traces of counts (fallback)
-    labels = [f"{r.src}: {r.videoTitle}"[:40] if r.videoTitle else r.src for r in pos_top.itertuples()]
-    labels = labels + [f"{r.src}: {r.videoTitle}"[:40] if r.videoTitle else r.src for r in neg_top.itertuples()]
-    kinds  = ["Top Positive"]*len(pos_top) + ["Top Negative"]*len(neg_top)
-    vals   = [len(txt) for txt in list(pos_top["clean"]) + list(neg_top["clean"])]
+    # Build x labels
+    pos_labels = [f"{r.src}: {r.videoTitle}"[:40] if r.videoTitle else r.src for r in pos_top.itertuples()]
+    neg_labels = [f"{r.src}: {r.videoTitle}"[:40] if r.videoTitle else r.src for r in neg_top.itertuples()]
+
+    # Build y values (impact)
+    pos_vals = list(pos_top["impact"])
+    neg_vals = list(neg_top["impact"])
+
+    # Create grouped bar chart
     fig = go.Figure()
-    fig.add_bar(name="Top Positive", x=labels[:len(pos_top)], y=vals[:len(pos_top)])
-    fig.add_bar(name="Top Negative", x=labels[len(pos_top):], y=vals[len(pos_top):])
-    fig.update_layout(barmode="group", title="Top Items (proxy by text length)", xaxis_title="", yaxis_title="Text length")
+    fig.add_bar(name="Top Positive", x=pos_labels, y=pos_vals, marker_color="green")
+    fig.add_bar(name="Top Negative", x=neg_labels, y=neg_vals, marker_color="red")
+    fig.update_layout(barmode="group", title="Top Positive & Negative Items (by Impact)", xaxis_title="", yaxis_title="Impact / Views")
+    
     return fig

@@ -17,7 +17,7 @@ def t(lang, key, fallback=None):
     return I18N.get(lang, {}).get(key, fallback or key)
 
 # ---- Sidebar ----
-lang = st.sidebar.selectbox("🌐 Language", ["en", "ta", "hi"], index=0)
+lang = st.sidebar.selectbox("🌐 Language", ["English, "Tamil", "Hindi"], index=0)
 st.sidebar.title(t(lang, "menu", "Menu"))
 menu = st.sidebar.radio(
     t(lang, "menu", "Menu"),

@@ -1,0 +1,26 @@
+{
+  "English": {
+    "Sentiment Analysis Dashboard": "Sentiment Analysis Dashboard",
+    "Enter Product Name / Keyword": "Enter Product Name / Keyword",
+    "Product / Topic Name": "Product / Topic Name",
+    "Analyze": "Analyze",
+    "Enter YouTube Channel ID": "Enter YouTube Channel ID",
+    "Channel ID": "Channel ID"
+  },
+  "Tamil": {
+    "Sentiment Analysis Dashboard": "உணர்வு பகுப்பாய்வு டாஷ்போர்டு",
+    "Enter Product Name / Keyword": "தயாரிப்பு பெயர் / சொல் எழுதவும்",
+    "Product / Topic Name": "தயாரிப்பு / தலைப்பு பெயர்",
+    "Analyze": "பகுப்பாய்வு செய்",
+    "Enter YouTube Channel ID": "YouTube சேனல் ஐடி உள்ளிடவும்",
+    "Channel ID": "சேனல் ஐடி"
+  },
+  "Hindi": {
+    "Sentiment Analysis Dashboard": "भावना विश्लेषण डैशबोर्ड",
+    "Enter Product Name / Keyword": "उत्पाद का नाम / कीवर्ड दर्ज करें",
+    "Product / Topic Name": "उत्पाद / विषय नाम",
+    "Analyze": "विश्लेषण करें",
+    "Enter YouTube Channel ID": "YouTube चैनल आईडी दर्ज करें",
+    "Channel ID": "चैनल आईडी"
+  }
+}

@@ -1,25 +1,49 @@
 # app.py
 import json
 import streamlit as st
-import pandas as pd
-from collections import Counter
 from preprocess import clean_text, detect_language
 from sentiment_model import analyze_sentiment
 from fetch_data import fetch_twitter_data, fetch_youtube_by_keyword, fetch_youtube_by_channel
 from visualize import plot_sentiment_pie, plot_platform_bar
+import nltk
+from collections import Counter
+import re
 
-st.set_page_config(page_title="Sentiment Dashboard", layout="wide")
+# ---- NLTK setup for pros/cons extraction ----
+nltk.download('punkt')
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+STOPWORDS = set(stopwords.words('english'))
 
-# ---- Load translations ----
+# ---- load translations ----
 with open("translations.json", "r", encoding="utf-8") as f:
     I18N = json.load(f)
 
 def t(lang, key, fallback=None):
     return I18N.get(lang, {}).get(key, fallback or key)
 
-# ---- Sidebar controls ----
+def extract_feedback(comments, top_n=5):
+    """Extract top short words/phrases from comments"""
+    words = []
+    for c in comments:
+        text = c.lower()
+        text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+        tokens = nltk.word_tokenize(text)
+        tokens = [w for w in tokens if w not in STOPWORDS and len(w) > 2]
+        words.extend(tokens)
+    most_common = [w for w, _ in Counter(words).most_common(top_n)]
+    return most_common
+
+# ---- Streamlit Page Setup ----
+st.set_page_config(page_title="Sentiment Dashboard", layout="wide")
 st.sidebar.title("📊 Sentiment Dashboard")
-lang = st.sidebar.selectbox("🌐 Language", ["English", "Tamil", "Hindi"], index=0)
+
+# ---- Language Selection ----
+lang_dict = {"English": "en", "Tamil": "ta", "Hindi": "hi"}
+lang_name = st.sidebar.selectbox("🌐 Language", ["English", "Tamil", "Hindi"], index=0)
+lang = lang_dict[lang_name]
+
+# ---- Menu ----
 menu = st.sidebar.radio(
     t(lang, "menu", "Menu"),
     [t(lang,"product_analysis","Product / Feedback Analysis"),
@@ -28,10 +52,6 @@ menu = st.sidebar.radio(
 
 st.title(t(lang, "app_title", "Sentiment Analysis Dashboard"))
 st.caption(t(lang, "tagline", "Fast, multilingual (Tamil/English/Hindi), emoji-aware"))
-
-# ---- Home section (Quick Live Check) ----
-with st.expander(t(lang, "live_quick_check", "Live Quick Check"), expanded=True):
-    st.write(t(lang, "quick_check_desc", "Type a keyword to preview a few latest items quickly."))
 
 # ====== PRODUCT / FEEDBACK ANALYSIS ======
 if menu == t(lang,"product_analysis","Product / Feedback Analysis"):
@@ -47,59 +67,45 @@ if menu == t(lang,"product_analysis","Product / Feedback Analysis"):
             tweets = fetch_twitter_data(keyword, limit=max_items)
             yt_comments = fetch_youtube_by_keyword(keyword, max_videos=5, max_comments_per_video=max_items//5)
 
-        # Shape unified records
+        # Shape into unified records and analyze
         records = []
         for txt in tweets:
             cleaned = clean_text(txt)
             lg = detect_language(cleaned)
             sent = analyze_sentiment(cleaned, lg)
-            records.append({"text": txt, "clean": cleaned, "lang": lg, "sent": sent, "src": "Twitter", "views": 1}) # views fallback
+            records.append({"text": txt, "clean": cleaned, "lang": lg, "sent": sent, "src": "Twitter", "views": 0})
 
         for item in yt_comments:
             cleaned = clean_text(item["text"])
             lg = detect_language(cleaned)
             sent = analyze_sentiment(cleaned, lg)
-            records.append({"text": item["text"], "clean": cleaned, "lang": lg, "sent": sent, "src": "YouTube", "videoTitle": item.get("videoTitle",""), "views": item.get("viewCount", 0)})
+            records.append({"text": item["text"], "clean": cleaned, "lang": lg, "sent": sent, "src": "YouTube", "views": item.get("viewCount",0)})
 
-        # ----- Charts -----
+        # ---- Charts ----
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(plot_sentiment_pie(records), use_container_width=True)
+
         with c2:
-            # Platform comparison based on total views
-            df = pd.DataFrame(records)
-            platform_views = df.groupby("src")["views"].sum().reset_index()
-            st.bar_chart(data=platform_views, x="src", y="views", height=400)
+            # Platform comparison based on total views (Twitter: count, YouTube: sum views)
+            platform_counts = {"Twitter": sum(1 for r in records if r["src"]=="Twitter"),
+                               "YouTube": sum(r.get("views",0) for r in records if r["src"]=="YouTube")}
+            st.bar_chart(platform_counts)
 
-        # ----- What people actually think -----
-        st.markdown(f"### {t(lang,'results','What people actually think about')} {keyword}:")
-        if df.empty:
-            st.write("No comments found.")
-        else:
-            pros_comments = df[df["sent"]=="Positive"]["clean"].tolist()
-            cons_comments = df[df["sent"]=="Negative"]["clean"].tolist()
+        # ---- Pros / Cons extraction ----
+        pos_comments = [r["text"] for r in records if r["sent"]=="Positive"]
+        neg_comments = [r["text"] for r in records if r["sent"]=="Negative"]
 
-            def get_top_comments(lst, n=5):
-                from collections import Counter
-                counter = Counter(lst)
-                top = counter.most_common(n)
-                return [c for c,_ in top]
+        top_pros = extract_feedback(pos_comments, top_n=5)
+        top_cons = extract_feedback(neg_comments, top_n=5)
 
-            st.markdown("**Pros:**")
-            top_pros = get_top_comments(pros_comments)
-            if top_pros:
-                for p in top_pros:
-                    st.write(f"- {p}")
-            else:
-                st.write("No positive comments found.")
+        st.markdown("### Pros / Positive Feedback")
+        for p in top_pros:
+            st.write(f"- {p}")
 
-            st.markdown("**Cons:**")
-            top_cons = get_top_comments(cons_comments)
-            if top_cons:
-                for c in top_cons:
-                    st.write(f"- {c}")
-            else:
-                st.write("No negative comments found.")
+        st.markdown("### Cons / Negative Feedback")
+        for c in top_cons:
+            st.write(f"- {c}")
 
 # ====== CONTENT CREATOR INSIGHTS (YOUTUBE) ======
 if menu == t(lang,"creator_insights","Content Creator Insights"):
@@ -121,22 +127,25 @@ if menu == t(lang,"creator_insights","Content Creator Insights"):
             lg = detect_language(cleaned)
             sent = analyze_sentiment(cleaned, lg)
             rec = {"text": item["text"], "clean": cleaned, "lang": lg, "sent": sent, "src": "YouTube",
-                   "videoTitle": item.get("videoTitle",""), "views": item.get("viewCount",0)}
+                   "videoTitle": item.get("videoTitle",""), "views": item.get("viewCount", 0)}
             records.append(rec)
 
+        # Sentiment Pie Chart
         st.plotly_chart(plot_sentiment_pie(records), use_container_width=True)
-        st.plotly_chart(plot_platform_bar(records), use_container_width=True)
+
+        # Platform comparison (just YouTube here)
+        platform_views = {"YouTube": sum(r.get("views",0) for r in records)}
+        st.bar_chart(platform_views)
 
         # Quick KPIs
         pos = sum(1 for r in records if r["sent"]=="Positive")
         neg = sum(1 for r in records if r["sent"]=="Negative")
         neu = sum(1 for r in records if r["sent"]=="Neutral")
-        total = max(1,len(records))
+        total = max(1, len(records))
         colA, colB, colC, colD = st.columns(4)
         colA.metric("Total Comments", f"{total}")
         colB.metric("Positive %", f"{(pos/total)*100:0.1f}%")
         colC.metric("Neutral %", f"{(neu/total)*100:0.1f}%")
         colD.metric("Negative %", f"{(neg/total)*100:0.1f}%")
 
-st.write("")
-st.caption("Tip: Set your YT API key as env var or in Streamlit secrets. Twitter uses snscrape fallback if no API keys.")
+st.caption("Tip: Set your YT API key in Streamlit secrets as YOUTUBE_API_KEY. Twitter uses snscrape fallback.")
